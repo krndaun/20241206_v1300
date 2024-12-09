@@ -46,6 +46,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '842590652193',
     projectId: 'nesysworks',
     authDomain: 'nesysworks.firebaseapp.com',
+    databaseURL: 'https://nesysworks-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'nesysworks.firebasestorage.app',
     measurementId: 'G-HLDZB9NQ24',
   );
@@ -55,6 +56,7 @@ class DefaultFirebaseOptions {
     appId: '1:842590652193:android:63c9209589f82a59b1a060',
     messagingSenderId: '842590652193',
     projectId: 'nesysworks',
+    databaseURL: 'https://nesysworks-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'nesysworks.firebasestorage.app',
   );
 
@@ -63,6 +65,7 @@ class DefaultFirebaseOptions {
     appId: '1:842590652193:ios:50b10a7cc409ba96b1a060',
     messagingSenderId: '842590652193',
     projectId: 'nesysworks',
+    databaseURL: 'https://nesysworks-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'nesysworks.firebasestorage.app',
     iosBundleId: 'kr.plinemotors.nesysworks.nesysworks',
   );
@@ -72,6 +75,7 @@ class DefaultFirebaseOptions {
     appId: '1:842590652193:ios:50b10a7cc409ba96b1a060',
     messagingSenderId: '842590652193',
     projectId: 'nesysworks',
+    databaseURL: 'https://nesysworks-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'nesysworks.firebasestorage.app',
     iosBundleId: 'kr.plinemotors.nesysworks.nesysworks',
   );
@@ -82,6 +86,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '842590652193',
     projectId: 'nesysworks',
     authDomain: 'nesysworks.firebaseapp.com',
+    databaseURL: 'https://nesysworks-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'nesysworks.firebasestorage.app',
     measurementId: 'G-FHF7P0WMMK',
   );

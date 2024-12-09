@@ -1,5 +1,9 @@
+import 'dart:convert';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 class LoginScreen extends StatefulWidget {
   @override
@@ -8,43 +12,110 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _emailController =
-      TextEditingController(text: "jd@pline.co.kr");
+      TextEditingController(text: "jd@pline.co.kr"); // 기본 이메일
+  final TextEditingController _passwordController =
+      TextEditingController(text: "password123"); // 기본 비밀번호
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  void _sendLoginLink() async {
+  void _login() async {
     final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
 
-    if (email.isEmpty) {
+    if (email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Please enter your email.')),
+        SnackBar(content: Text('이메일과 비밀번호를 입력해주세요.')),
       );
       return;
     }
 
     try {
-      await _auth.sendSignInLinkToEmail(
-        email: email,
-        actionCodeSettings: ActionCodeSettings(
-          url:
-              'https://nesysworks.firebaseapp.com', // Firebase Console에 설정된 URL
-          handleCodeInApp: true, // 앱 내부에서 인증 링크 처리
-          androidPackageName: 'kr.plinemotors.nesysworks',
-          androidInstallApp: true,
-          androidMinimumVersion: '21', // 최소 Android 버전
-          iOSBundleId: 'kr.plinemotors.nesysworks.nesysworks', // iOS 번들 ID
-        ),
-      );
+      UserCredential userCredential;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Login link sent to $email')),
-      );
+      // Firebase 이메일/비밀번호로 로그인 시도
+      try {
+        userCredential = await _auth.signInWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+        print('로그인 성공: ${userCredential.user!.uid}');
+      } catch (e) {
+        // 로그인 실패 시 계정 생성
+        print('로그인 실패, 새 계정 생성 시도: $e');
+        userCredential = await _auth.createUserWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+        print('새 계정 생성 성공: ${userCredential.user!.uid}');
+      }
 
-      // 이메일 저장 (필수)
-      await _auth.setPersistence(Persistence.LOCAL);
+      final uid = userCredential.user!.uid;
+      _sendToApi(uid, email); // API 호출
     } catch (e) {
-      print('Error sending login link: $e');
+      print('오류 발생: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error sending login link.')),
+        SnackBar(content: Text('로그인 중 오류가 발생했습니다. 다시 시도해주세요.')),
+      );
+    }
+  }
+
+  Future<void> _sendToApi(String uid, String email) async {
+    try {
+      // 서버 API 호출
+      final response = await http.post(
+        Uri.parse('https://partners.plinemotors.kr/apilogin'),
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {'email': email},
+      );
+
+      print('Response status: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        if (data['status'] == true) {
+          final userData = data['username'];
+
+          // Firestore에 사용자 정보 저장
+          await FirebaseFirestore.instance.collection('users').doc(uid).set({
+            'uid': uid,
+            'email': email,
+            'id': userData['id'],
+            'username': userData['username'],
+            'teamsid': userData['teamsid'],
+            'pdiv': userData['pdiv'],
+            'cdiv': userData['cdiv'],
+            'ast_admin': userData['ast_admin'],
+            'dash_mode': userData['dash_mode'],
+            'team': userData['team'],
+            'dept': userData['dept'],
+            'dpt': userData['dpt'],
+            'dept2': userData['dept2'],
+            'logkey': userData['logkey'],
+            'atv': userData['atv'],
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('환영합니다, ${userData['username']}님!')),
+          );
+
+          // 홈 화면으로 이동
+          Navigator.pushReplacementNamed(context, '/home');
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('API 로그인 실패: ${data['message']}')),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('서버 오류: ${response.statusCode}')),
+        );
+      }
+    } catch (e) {
+      print('API 호출 중 오류 발생: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('API 호출 중 오류가 발생했습니다.')),
       );
     }
   }
@@ -52,31 +123,29 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Login')),
+      appBar: AppBar(
+        title: const Text('로그인'),
+      ),
       body: Padding(
-        padding: EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              'Enter your email to log in',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 20),
             TextField(
               controller: _emailController,
-              decoration: InputDecoration(
-                labelText: 'Email',
-                border: OutlineInputBorder(),
-              ),
+              decoration: InputDecoration(labelText: '이메일'),
               keyboardType: TextInputType.emailAddress,
             ),
             SizedBox(height: 20),
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(labelText: '비밀번호'),
+              obscureText: true,
+            ),
+            SizedBox(height: 20),
             ElevatedButton(
-              onPressed: _sendLoginLink,
-              child: Text('Send Login Link'),
+              onPressed: _login,
+              child: const Text('로그인'),
             ),
           ],
         ),
