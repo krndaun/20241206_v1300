@@ -47,8 +47,22 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+    <array>
+        <string>fetch</string>
+        <string>remote-notification</string>
+    </array>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <true/>
+    </dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
     <string>This app needs your location to provide better services.</string>
+    <key>NSUserTrackingUsageDescription</key>
+    <string>이 앱은 맞춤형 알림을 제공하기 위해 추적 정보를 사용합니다.</string>
+    <key>NSPushNotificationsUsageDescription</key>
+    <string>푸시 알림을 받기 위해 알림 권한이 필요합니다.</string>
     <key>NSLocationAlwaysUsageDescription</key>
     <string>This app requires your location even in the background.</string>
     <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
