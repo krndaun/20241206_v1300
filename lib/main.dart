@@ -31,19 +31,7 @@ Future<void> initializeLocalNotifications() async {
     iOS: initializationSettingsDarwin,
   );
 
-  await flutterLocalNotificationsPlugin.initialize(
-    initializationSettings,
-    onDidReceiveNotificationResponse: (NotificationResponse response) async {
-      try {
-        print('알림 응답: ${response.payload}');
-        if (response.payload != null) {
-          navigatorKey.currentState?.pushNamed('/home');
-        }
-      } catch (e) {
-        print('알림 클릭 이벤트 처리 중 오류 발생: $e');
-      }
-    },
-  );
+  await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 }
 
 void main() async {
@@ -54,14 +42,7 @@ void main() async {
   await initializeLocalNotifications();
 
   // 백그라운드 메시지 핸들러 등록
-  Future<void> _firebaseMessagingBackgroundHandler(
-      RemoteMessage message) async {
-    try {
-      print('백그라운드 푸시 알림 수신: ${message.notification?.title}');
-    } catch (e) {
-      print('백그라운드 메시지 처리 중 오류 발생: $e');
-    }
-  }
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   // FirebaseMessaging 설정
   FirebaseMessaging messaging = FirebaseMessaging.instance;
@@ -88,42 +69,29 @@ void main() async {
   }
 
   FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    try {
-      print('포그라운드 푸시 알림 수신: ${message.notification?.title}');
-      RemoteNotification? notification = message.notification;
-      AndroidNotification? android = message.notification?.android;
+    print('포그라운드 푸시 알림 수신: ${message.notification?.title}');
+    RemoteNotification? notification = message.notification;
+    AndroidNotification? android = message.notification?.android;
 
-      if (notification != null && android != null) {
-        final title = notification.title ?? '제목 없음';
-        final body = notification.body ?? '내용 없음';
-        print('알림 제목: $title, 내용: $body');
-
-        flutterLocalNotificationsPlugin.show(
-          notification.hashCode,
-          title,
-          body,
-          NotificationDetails(
-            android: AndroidNotificationDetails(
-              'channel_id',
-              'channel_name',
-              channelDescription: 'channel_description',
-              importance: Importance.high,
-            ),
+    if (notification != null && android != null) {
+      flutterLocalNotificationsPlugin.show(
+        notification.hashCode,
+        notification.title,
+        notification.body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            'high_importance_channel',
+            'High Importance Notifications',
+            importance: Importance.high,
           ),
-        );
-      }
-    } catch (e) {
-      print('포그라운드 메시지 처리 오류: $e');
+        ),
+      );
     }
   });
 
   FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-    try {
-      print('푸시 알림 클릭 후 열림: ${message.notification?.title}');
-      navigatorKey.currentState?.pushNamed('/home');
-    } catch (e) {
-      print('알림 클릭 처리 중 오류 발생: $e');
-    }
+    print('푸시 알림 클릭 후 열림: ${message.notification?.title}');
+    navigatorKey.currentState!.pushNamed('/home');
   });
 
   runApp(MyApp());
@@ -133,6 +101,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      locale: Locale('ko', 'KR'), // 앱 기본 언어를 한국어로 설정
       debugShowCheckedModeBanner: false,
       title: 'nesysworks',
       navigatorKey: navigatorKey,

@@ -60,15 +60,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _sendToApi(String uid, String email) async {
     try {
-      // 서버 API 호출
       final response = await http.post(
-        Uri.parse('https://partners.plinemotors.kr/apilogin'),
+        Uri.parse('https://works.plinemotors.kr/apilogin'),
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         body: {'email': email},
       );
-
-      print('Response status: ${response.statusCode}');
-      print('Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -76,7 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
         if (data['status'] == true) {
           final userData = data['username'];
 
-          // Firestore에 사용자 정보 저장
+          // Firestore에 사용자 정보 저장 또는 업데이트
           await FirebaseFirestore.instance.collection('users').doc(uid).set({
             'uid': uid,
             'email': email,
@@ -94,13 +90,12 @@ class _LoginScreenState extends State<LoginScreen> {
             'logkey': userData['logkey'],
             'atv': userData['atv'],
             'createdAt': FieldValue.serverTimestamp(),
-          });
+          }, SetOptions(merge: true)); // 기존 데이터 병합
 
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('환영합니다, ${userData['username']}님!')),
           );
 
-          // 홈 화면으로 이동
           Navigator.pushReplacementNamed(context, '/home');
         } else {
           ScaffoldMessenger.of(context).showSnackBar(

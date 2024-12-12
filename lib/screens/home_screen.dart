@@ -2,10 +2,12 @@ import 'dart:convert'; // JSON 인코딩/디코딩
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
-import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http; // HTTP 요청
+import 'package:http/http.dart' as http;
+
+import 'custom_drawer.dart';
 
 class HomeScreen extends StatefulWidget {
   @override
@@ -14,13 +16,32 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Position? _currentPosition;
-  String? _currentAddress; // 주소 저장
-  final FirebaseAuth _auth = FirebaseAuth.instance; // Firebase 인증
+  String? _currentAddress;
+  Map<String, dynamic>? _currentUser;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   @override
   void initState() {
     super.initState();
-    _updateLocation();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _listenToUserInfo(user.uid);
+      _updateLocation();
+    }
+  }
+
+  void _listenToUserInfo(String uid) {
+    FirebaseFirestore.instance
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.exists) {
+        setState(() {
+          _currentUser = snapshot.data() as Map<String, dynamic>;
+        });
+      }
+    });
   }
 
   Future<void> _updateLocation() async {
@@ -32,7 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
         permission = await Geolocator.requestPermission();
         if (permission == LocationPermission.denied ||
             permission == LocationPermission.deniedForever) {
-          throw Exception('위치 권한이 거부되었습니다. 설정에서 위치 권한을 활성화해주세요.');
+          throw Exception('위치 권한이 거부되었습니다.');
         }
       }
 
@@ -40,7 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
       bool isLocationServiceEnabled =
           await Geolocator.isLocationServiceEnabled();
       if (!isLocationServiceEnabled) {
-        throw Exception('위치 서비스가 비활성화되어 있습니다. 설정에서 위치 서비스를 활성화해주세요.');
+        throw Exception('위치 서비스가 비활성화되어 있습니다.');
       }
 
       // 위치 정보 가져오기
@@ -55,10 +76,14 @@ class _HomeScreenState extends State<HomeScreen> {
       print('현재 위치: $_currentPosition');
 
       // 주소 변환
-      await _getAddressFromLatLng(position.latitude, position.longitude);
+      final address =
+          await _getAddressFromLatLng(position.latitude, position.longitude);
 
       // Firestore에 위치 정보 저장
-      await _saveLocationToFirestore(position);
+      await _saveOrUpdateLocation(position, address);
+
+      // 서버로 위치 정보 및 FCM 토큰 전송
+      await _sendLocationToServer(position, address);
     } catch (e) {
       print('위치 정보 업데이트 실패: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -67,111 +92,102 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _getAddressFromLatLng(double latitude, double longitude) async {
-    try {
-      List<Placemark> placemarks =
-          await placemarkFromCoordinates(latitude, longitude);
+  Future<void> _sendLocationToServer(Position position, String? address) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
 
-      Placemark place = placemarks.first;
-
-      setState(() {
-        _currentAddress =
-            '${place.locality}, ${place.subLocality}, ${place.thoroughfare}';
-      });
-
-      print('주소 변환 성공: $_currentAddress');
-    } catch (e) {
-      print('주소 변환 실패: $e');
+    if (currentUser == null) {
+      print('사용자가 인증되지 않았습니다.');
+      return;
     }
-  }
 
-  Future<void> _saveLocationToFirestore(Position position) async {
-    try {
-      final user = _auth.currentUser;
+    String? token = await FirebaseMessaging.instance.getToken();
 
-      if (user == null) {
-        print('사용자가 인증되지 않았습니다.');
-        return;
-      }
-
-      // Firestore에 위치 정보 저장
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .update({
-        'location': {
-          'latitude': position.latitude,
-          'longitude': position.longitude,
-          'address': _currentAddress,
-          'timestamp': FieldValue.serverTimestamp(),
-        },
-      });
-
-      print(
-          '위치 정보 Firestore에 저장됨: ${position.latitude}, ${position.longitude}');
-
-      // Firestore 업데이트 후 FCM 알림 전송
-      await _sendPushNotification(
-        title: '위치 업데이트됨',
-        body: '새로운 위치: $_currentAddress',
-      );
-    } catch (e) {
-      print('Firestore 업데이트 실패: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('위치 정보를 Firestore에 저장하는 데 실패했습니다.')),
-      );
+    if (token == null) {
+      print('FCM 토큰을 가져올 수 없습니다.');
+      return;
     }
-  }
-
-  Future<void> _sendPushNotification({
-    required String title,
-    required String body,
-  }) async {
-    const String serverKey =
-        'TDsqJ7tBQLL9xAn7yD5svpgmeBYuizdTe8_UfqD4LXg'; // Firebase 서버 키
-    const String fcmUrl = 'https://fcm.googleapis.com/fcm/send';
-
-    // FCM 토큰 (테스트용으로 사용자의 토큰 또는 구독 토픽 사용)
-    const String userToken = 'USER_DEVICE_FCM_TOKEN';
 
     try {
       final response = await http.post(
-        Uri.parse(fcmUrl),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'key=$serverKey',
-        },
+        Uri.parse('https://works.plinemotors.kr/api/save-token'),
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'to': userToken,
-          'notification': {
-            'title': title,
-            'body': body,
-            'sound': 'default',
-          },
-          'data': {
-            'click_action': 'FLUTTER_NOTIFICATION_CLICK',
-            'message': body,
-          },
+          'fcm_token': token,
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'address': address ?? '주소 없음',
+          'email': currentUser.email,
+          'userid': currentUser.uid,
         }),
       );
 
       if (response.statusCode == 200) {
-        print('푸시 알림 전송 성공');
+        print('위치 정보 및 FCM 토큰 전송 성공');
       } else {
-        print('푸시 알림 전송 실패: ${response.body}');
+        print('위치 정보 및 FCM 토큰 전송 실패: ${response.body}');
       }
     } catch (e) {
-      print('푸시 알림 전송 중 오류 발생: $e');
+      print('위치 정보 및 FCM 토큰 전송 중 오류 발생: $e');
     }
   }
 
-  Future<void> _refreshLocation() async {
-    if (_currentPosition == null) {
-      await _updateLocation();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('위치 정보가 이미 최신 상태입니다.')),
+  Future<String?> _getAddressFromLatLng(
+      double latitude, double longitude) async {
+    const String kakaoApiKey =
+        '96a29c4e8f07bac64ccb6133dd98c006'; // 카카오 REST API 키
+    final String url =
+        'https://dapi.kakao.com/v2/local/geo/coord2address.json?x=$longitude&y=$latitude';
+
+    try {
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {'Authorization': 'KakaoAK $kakaoApiKey'},
       );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+
+        if (data['documents'] != null && data['documents'].isNotEmpty) {
+          final address = data['documents'][0]['address']['address_name'];
+          print('카카오 주소 변환 성공: $address');
+          setState(() {
+            _currentAddress = address; // 주소를 상태 변수에 저장
+          });
+          return address;
+        } else {
+          print('카카오 API로 주소를 찾을 수 없습니다.');
+          return null;
+        }
+      } else {
+        print('카카오 API 요청 실패: ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      print('카카오 주소 변환 실패: $e');
+      return null;
+    }
+  }
+
+  Future<void> _saveOrUpdateLocation(Position position, String? address) async {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      print('사용자가 인증되지 않았습니다.');
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'location': {
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'address': address ?? '주소 없음',
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+      }, SetOptions(merge: true));
+      print('Firestore 위치 정보 저장/업데이트 성공');
+    } catch (e) {
+      print('Firestore 저장 실패: $e');
     }
   }
 
@@ -179,36 +195,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('홈'),
+        title: Text(_currentUser?['username'] ?? '홈'),
       ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            const DrawerHeader(
-              decoration: BoxDecoration(color: Colors.blue),
-              child: Text(
-                '메뉴',
-                style: TextStyle(color: Colors.white, fontSize: 24),
-              ),
-            ),
-            ListTile(
-              title: const Text('위치 새로고침'),
-              onTap: _updateLocation,
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('로그아웃'),
-              onTap: () {
-                Navigator.of(context)
-                    .pushNamedAndRemoveUntil('/login', (route) => false);
-              },
-            ),
-          ],
-        ),
-      ),
+      drawer: CustomDrawer(),
       body: RefreshIndicator(
-        onRefresh: _refreshLocation,
+        onRefresh: _updateLocation,
         child: ListView(
           children: [
             Center(
@@ -216,13 +207,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                            '현재 위치: ${_currentPosition!.latitude}, ${_currentPosition!.longitude}'),
-                        if (_currentAddress != null)
-                          Text('주소: $_currentAddress'),
+                        if (_currentAddress != null) Text('$_currentAddress'),
                       ],
                     )
-                  : const Text('위치 정보를 가져오는 중입니다...'),
+                  : const Center(child: CircularProgressIndicator()),
             ),
           ],
         ),
